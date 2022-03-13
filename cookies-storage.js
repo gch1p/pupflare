@@ -35,7 +35,13 @@ module.exports = {
     async get() {
         if (!(await exists(storageFileName)))
             return []
-        return JSON.parse(await fs.readFile(storageFileName, 'utf-8'))
+
+        try {
+            return JSON.parse(await fs.readFile(storageFileName, 'utf-8'))
+        } catch (e) {
+            console.error(e)
+            return []
+        }
     },
 
     setFileName(name) {
