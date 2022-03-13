@@ -1,0 +1,14 @@
+[Unit]
+Description=Xvfb
+After=network-online.target
+
+[Service]
+User=%i
+Group=%i
+Restart=on-failure
+ProtectSystem=full
+PrivateDevices=true
+ExecStart=/usr/bin/Xvfb :1 -screen 0 1024x768x24
+
+[Install]
+WantedBy=multi-user.target
