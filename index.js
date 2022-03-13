@@ -28,7 +28,11 @@ router.get('/request', async (ctx, next) => {
     if (!ctx.query.url)
         throw new Error('url not specified')
 
-    const page = await browser.getPage();
+    const myResult = {
+        binary: false,
+        headers: [],
+        data: ''
+    };
 
     /*if (ctx.method === "POST") {
         await page.removeAllListeners('request');
@@ -42,82 +46,69 @@ router.get('/request', async (ctx, next) => {
         });
     }*/
 
-    const client = await page.target().createCDPSession();
-    await client.send('Network.setRequestInterception', {
-        patterns: [{
-            urlPattern: '*',
-            resourceType: 'Document',
-            interceptionStage: 'HeadersReceived'
-        }],
-    });
-
-    let myResult = {
-        binary: false,
-        headers: [],
-        data: ''
-    }
-
-    await client.on('Network.requestIntercepted', async e => {
-        let obj = { interceptionId: e.interceptionId };
-
-        if (e.isDownload) {
-            await client.send('Network.getResponseBodyForInterception', {
-                interceptionId: e.interceptionId
-            }).then((r) => {
-                if (r.base64Encoded) {
-                    myResult.binary = true
-                    myResult.data = r.body
-                } else {
-                    console.error('not base64 encoded!')
-                }
+    let myError = false
+    await new Promise(async (resolve, reject) => {
+        const page = await browser.getPage(
+            (e) => e.isDownload === true,
+            (response, headers) => {
+                Object.assign(myResult, {
+                    data: response.base64Encoded ? response.body : btoa(response.body),
+                    binary: true,
+                    headers
+                })
+                resolve()
             })
-            obj['errorReason'] = 'BlockedByClient';
-            myResult.headers = e.responseHeaders
-        }
 
-        await client.send('Network.continueInterceptedRequest', obj);
-    });
-
-    try {
-        let tryCount = 0
-        let response = await page.goto(ctx.query.url, {
-            timeout: loadingTimeout,
-            waitUntil: 'domcontentloaded'
-        })
-
-        let body = await response.text();
-
-        while ((body.includes("cf-browser-verification") || body.includes('cf-captcha-container')) && tryCount <= maxTryCount) {
-            let newResponse = await page.waitForNavigation({
+        try {
+            let tryCount = 0
+            let response = await page.goto(ctx.query.url, {
                 timeout: loadingTimeout,
                 waitUntil: 'domcontentloaded'
-            });
-            if (newResponse)
-                response = newResponse;
-            body = await response.text();
-            tryCount++;
-        }
+            })
 
-        myResult.data = await response.text()
-        myResult.headers = await response.headers()
-    } catch (error) {
-        if (!error.toString().includes("ERR_BLOCKED_BY_CLIENT")) {
-            ctx.status = 500
-            ctx.body = error
-        }
-    }
+            let body = await response.text()
+            while ((body.includes("cf-browser-verification") || body.includes('cf-captcha-container')) && tryCount <= maxTryCount) {
+                let newResponse = await page.waitForNavigation({
+                    timeout: loadingTimeout,
+                    waitUntil: 'domcontentloaded'
+                });
+                if (newResponse)
+                    response = newResponse;
+                body = await response.text();
+                tryCount++;
+            }
 
-    ctx.body = JSON.stringify(myResult)
+            myResult.data = await response.text()
+            myResult.headers = await response.headers()
+
+            resolve()
+        } catch (error) {
+            if (!error.toString().includes("ERR_BLOCKED_BY_CLIENT")) {
+                ctx.status = 500
+                ctx.body = error
+
+                resolve()
+            } else {
+                myError = true
+            }
+        }
+    })
+
+    if (!myError)
+        ctx.body = JSON.stringify(myResult)
+
+    await next()
 })
 .get('/cookies', async (ctx, next) => {
     ctx.body = JSON.stringify(await cookiesStorage.get())
+    await next()
 });
 
 
 (async () => {
     cookiesStorage.setFileName(argv.cookies)
 
-    console.log(argv)
+    // console.log(argv)
 
     if (argv.proxy)
         browser.setProxy(argv.proxy)
