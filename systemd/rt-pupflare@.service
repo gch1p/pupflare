@@ -1,0 +1,16 @@
+[Unit]
+Description=rt-pupflare
+After=network-online.target
+
+[Service]
+EnvironmentFile=/etc/default/rt-pupflare
+User=%i
+Group=%i
+Restart=on-failure
+ProtectSystem=full
+PrivateDevices=true
+WorkingDirectory=/opt/thirdparty
+ExecStart=/usr/bin/node $INSTALL_DIR/index.js $PARAMS
+
+[Install]
+WantedBy=multi-user.target
