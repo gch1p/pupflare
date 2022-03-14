@@ -37,7 +37,7 @@ module.exports = {
                     await cookiesStorage.save(cookies)
             })
 
-            page.setCookie(...(await cookiesStorage.get()))
+            await page.setCookie(...(await cookiesStorage.get()))
 
             cdpClient = await page.target().createCDPSession();
             await cdpClient.send('Network.setRequestInterception', {
