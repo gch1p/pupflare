@@ -1,20 +1,23 @@
 const cookiesStorage = require('./cookies-storage')
 const browser = require('./browser')
+const {singlePageWrapper, PageWrapper} = browser
 const os = require('os')
 const path = require('path')
 
 const argv = require('minimist')(process.argv.slice(2), {
     string: ['retries', 'timeout', 'cookies', 'port', 'proxy'],
-    boolean: ['no-sandbox', 'headful'],
+    boolean: ['no-sandbox', 'headful', 'reuse'],
     stopEarly: true,
     default: {
         port: 3000,
         retries: 10,
         timeout: 30000,
-        cookies: path.join(os.homedir(), '.rt-pupflare-cookies.json')
+        cookies: path.join(os.homedir(), '.rt-pupflare-cookies.json'),
+        reuse: false,
     }
 })
 
+let reusePage = argv.reuse
 const maxTryCount = parseInt(argv.retries)
 const loadingTimeout = parseInt(argv.timeout)
 
@@ -34,30 +37,34 @@ router.get('/request', async (ctx, next) => {
         data: ''
     };
 
-    /*if (ctx.method === "POST") {
-        await page.removeAllListeners('request');
-        await page.setRequestInterception(true);
-        page.on('request', interceptedRequest => {
-            var data = {
-                'method': 'POST',
-                'postData': ctx.request.rawBody
-            };
-            interceptedRequest.continue(data);
-        });
-    }*/
-
     let responseSet = false
+    let pageWrapper = null
+
     await new Promise(async (resolve, reject) => {
-        const page = await browser.getPage(
-            (e) => e.isDownload === true,
-            (response, headers) => {
-                Object.assign(myResult, {
-                    data: response.base64Encoded ? response.body : btoa(response.body),
-                    binary: true,
-                    headers
-                })
-                resolve()
+        const fInterceptionNeeded = (e) => e.isDownload === true
+        const fInterception = (response, headers) => {
+            Object.assign(myResult, {
+                data: response.base64Encoded ? response.body : btoa(response.body),
+                binary: true,
+                headers
             })
+            resolve()
+        }
+
+        pageWrapper = reusePage ? singlePageWrapper : new PageWrapper()
+        const page = await pageWrapper.getPage(fInterceptionNeeded, fInterception)
+
+        // not tested
+        if (ctx.method === "POST") {
+            await page.removeAllListeners('request')
+            await page.setRequestInterception(true)
+            page.on('request', interceptedRequest => {
+                interceptedRequest.continue({
+                    'method': 'POST',
+                    'postData': ctx.request.rawBody
+                })
+            })
+        }
 
         try {
             let tryCount = 0
@@ -96,6 +103,9 @@ router.get('/request', async (ctx, next) => {
     if (!responseSet)
         ctx.body = JSON.stringify(myResult)
 
+    if (!reusePage)
+        pageWrapper.page.close()
+
     await next()
 })
 .get('/cookies', async (ctx, next) => {
@@ -107,21 +117,17 @@ router.get('/request', async (ctx, next) => {
 (async () => {
     cookiesStorage.setFileName(argv.cookies)
 
-    // console.log(argv)
-
-    if (argv.proxy)
-        browser.setProxy(argv.proxy)
-    if (argv['no-sandbox'])
-        browser.disableSandbox()
-    if (argv.headful)
-        browser.setHeadful()
-
-    await browser.launch()
+    await browser.launch({
+        proxy: argv.proxy ?? null,
+        noSandbox: argv['no-sandbox'] ?? false,
+        headful: argv.headful ?? false,
+    })
 
     app.use(router.routes())
         .use(router.allowedMethods())
+
     app.on('error', (error) => {
-        console.error(error)
+        console.error('[app.onerror]', error)
     })
 
     app.listen(parseInt(argv.port), '127.0.0.1')
