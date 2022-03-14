@@ -46,7 +46,7 @@ router.get('/request', async (ctx, next) => {
         });
     }*/
 
-    let myError = false
+    let responseSet = false
     await new Promise(async (resolve, reject) => {
         const page = await browser.getPage(
             (e) => e.isDownload === true,
@@ -87,14 +87,13 @@ router.get('/request', async (ctx, next) => {
                 ctx.status = 500
                 ctx.body = error
 
+                responseSet = true
                 resolve()
-            } else {
-                myError = true
             }
         }
     })
 
-    if (!myError)
+    if (!responseSet)
         ctx.body = JSON.stringify(myResult)
 
     await next()
