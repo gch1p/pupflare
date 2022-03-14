@@ -27,7 +27,7 @@ const app = new Koa();
 const router = new Router();
 
 
-router.get('/request', async (ctx, next) => {
+async function requestHandler(ctx, next) {
     if (!ctx.query.url)
         throw new Error('url not specified')
 
@@ -35,7 +35,7 @@ router.get('/request', async (ctx, next) => {
         binary: false,
         headers: [],
         data: ''
-    };
+    }
 
     let responseSet = false
     let pageWrapper = null
@@ -107,11 +107,15 @@ router.get('/request', async (ctx, next) => {
         pageWrapper.page.close()
 
     await next()
-})
-.get('/cookies', async (ctx, next) => {
-    ctx.body = JSON.stringify(await cookiesStorage.get())
-    await next()
-});
+}
+
+router
+    .get('/request', requestHandler)
+    .post('/request', requestHandler)
+    .get('/cookies', async (ctx, next) => {
+        ctx.body = JSON.stringify(await cookiesStorage.get())
+        await next()
+    });
 
 
 (async () => {
