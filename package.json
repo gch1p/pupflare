@@ -2,17 +2,20 @@
   "name": "rt-pupflare",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node app.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@koa/router": "^10.1.1",
+    "async-mutex": "^0.3.2",
     "koa": "^2.13.4",
+    "koa-bodyparser": "^4.3.0",
+    "log4js": "^6.4.2",
     "minimist": "^1.2.5",
     "puppeteer": "^13.4.1",
     "puppeteer-extra": "^3.2.3",

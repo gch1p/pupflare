@@ -1,12 +1,13 @@
-const cookiesStorage = require('./cookies-storage')
-const browser = require('./browser')
+const cookiesStorage = require('./lib/cookies-storage')
+const browser = require('./lib/browser')
 const {singlePageWrapper, PageWrapper} = browser
 const os = require('os')
 const path = require('path')
+const logging = require('./lib/logging')
 
 const argv = require('minimist')(process.argv.slice(2), {
     string: ['retries', 'timeout', 'cookies', 'port', 'proxy'],
-    boolean: ['no-sandbox', 'headful', 'reuse'],
+    boolean: ['no-sandbox', 'headful', 'reuse', 'verbose'],
     stopEarly: true,
     default: {
         port: 3000,
@@ -14,16 +15,23 @@ const argv = require('minimist')(process.argv.slice(2), {
         timeout: 30000,
         cookies: path.join(os.homedir(), '.rt-pupflare-cookies.json'),
         reuse: false,
+        verbose: false,
     }
 })
 
+let logger = null
 let reusePage = argv.reuse
+
 const maxTryCount = parseInt(argv.retries)
 const loadingTimeout = parseInt(argv.timeout)
 
 const Koa = require('koa');
-const Router = require('@koa/router');
+const bodyParser = require('koa-bodyparser')
+const Router = require('@koa/router')
+
 const app = new Koa();
+app.use(bodyParser())
+
 const router = new Router();
 
 
@@ -50,21 +58,21 @@ async function requestHandler(ctx, next) {
             })
             resolve()
         }
+        const fPostInterception = (request) => {
+            if (ctx.method === 'POST') {
+                return {
+                    'method': 'POST',
+                    'postData': ctx.request.rawBody,
+                    'headers': {
+                        ...request.headers,
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    }
+                }
+            }
+        }
 
         pageWrapper = reusePage ? singlePageWrapper : new PageWrapper()
-        const page = await pageWrapper.getPage(fInterceptionNeeded, fInterception)
-
-        // not tested
-        if (ctx.method === "POST") {
-            await page.removeAllListeners('request')
-            await page.setRequestInterception(true)
-            page.on('request', interceptedRequest => {
-                interceptedRequest.continue({
-                    'method': 'POST',
-                    'postData': ctx.request.rawBody
-                })
-            })
-        }
+        const page = await pageWrapper.getPage(fInterceptionNeeded, fInterception, fPostInterception)
 
         try {
             let tryCount = 0
@@ -85,7 +93,7 @@ async function requestHandler(ctx, next) {
                 tryCount++;
             }
 
-            myResult.data = await response.text()
+            myResult.data = (await response.buffer()).toString('base64')
             myResult.headers = await response.headers()
 
             resolve()
@@ -119,6 +127,11 @@ router
 
 
 (async () => {
+    process.title = 'rt-pupflare'
+
+    logging.configure(argv.verbose)
+    logger = logging.getLogger('app')
+
     cookiesStorage.setFileName(argv.cookies)
 
     await browser.launch({
@@ -131,8 +144,8 @@ router
         .use(router.allowedMethods())
 
     app.on('error', (error) => {
-        console.error('[app.onerror]', error)
+        logger.error('app error:', error)
     })
 
     app.listen(parseInt(argv.port), '127.0.0.1')
-})();
+})()

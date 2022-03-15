@@ -10,7 +10,7 @@ Restart=on-failure
 ProtectSystem=full
 PrivateDevices=true
 WorkingDirectory=/opt/thirdparty
-ExecStart=/usr/bin/node $INSTALL_DIR/index.js $PARAMS
+ExecStart=/usr/bin/node $INSTALL_DIR/app.js $PARAMS
 
 [Install]
 WantedBy=multi-user.target
