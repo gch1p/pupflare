@@ -60,7 +60,7 @@ async function requestHandler(ctx, next) {
         }
         const fPostInterception = (request) => {
             if (ctx.method === 'POST') {
-                return {
+                const data = {
                     'method': 'POST',
                     'postData': ctx.request.rawBody,
                     'headers': {
@@ -68,21 +68,36 @@ async function requestHandler(ctx, next) {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     }
                 }
+                // logger.debug('intercepted POST, returning', data)
+                return data
             }
         }
 
         pageWrapper = reusePage ? singlePageWrapper : new PageWrapper()
         const page = await pageWrapper.getPage(fInterceptionNeeded, fInterception, fPostInterception)
 
+        let referer = ctx.header.referer
+        if (referer) {
+            for (let fakeDomain of ['a.maupassant.us', 'rtproxy.localhost']) {
+                referer = referer.replace(fakeDomain, 'rutracker.org')
+            }
+        } else {
+            referer = 'https://rutracker.org/'
+        }
+
+        // logger.debug(`referer: ${referer}`)
+
         try {
             let tryCount = 0
             let response = await page.goto(ctx.query.url, {
                 timeout: loadingTimeout,
-                waitUntil: 'domcontentloaded'
+                waitUntil: 'domcontentloaded',
+                referer
             })
 
             let body = await response.text()
             while ((body.includes("cf-browser-verification") || body.includes('cf-captcha-container')) && tryCount <= maxTryCount) {
+                logger.debug(`try ${tryCount}...`)
                 let newResponse = await page.waitForNavigation({
                     timeout: loadingTimeout,
                     waitUntil: 'domcontentloaded'
@@ -111,8 +126,13 @@ async function requestHandler(ctx, next) {
     if (!responseSet)
         ctx.body = JSON.stringify(myResult)
 
-    if (!reusePage)
-        pageWrapper.page.close()
+    if (!reusePage) {
+        try {
+            pageWrapper.page.close()
+        } catch (e) {
+            logger.error(e)
+        }
+    }
 
     await next()
 }
